@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Codon Game - DNA to RNA</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0f0f1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        #game-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+        
+        /* 메인 UI */
+        #start-screen, #result-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; background: rgba(20, 20, 40, 0.95); padding: 40px; border: 2px solid #4CAF50; border-radius: 20px; box-shadow: 0 0 30px rgba(76, 175, 80, 0.3); }
+        h1 { font-size: 3.5rem; color: #4CAF50; margin: 0 0 20px; text-shadow: 0 0 10px rgba(76,175,80,0.5); }
+        button { padding: 12px 35px; font-size: 1.2rem; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 8px; transition: 0.3s; }
+        button:hover { background: #66bb6a; transform: scale(1.05); }
+
+        /* 상단 정보 창 */
+        #stat-bar { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; font-size: 1.8rem; font-weight: bold; z-index: 10; }
+        .stat-item { background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 15px; border: 1px solid #333; }
+
+        /* 중앙 게임 섹션 */
+        #display-area { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 100%; }
+        #dna-display { font-size: 6rem; font-weight: 800; letter-spacing: 15px; color: #ffeb3b; text-shadow: 0 0 20px rgba(255, 235, 59, 0.4); }
+        #input-display { font-size: 4rem; height: 80px; color: #00e5ff; margin-top: 10px; font-family: monospace; }
+        #combo-text { color: #ff4081; font-size: 2rem; font-style: italic; height: 40px; }
+
+        /* 하단 가이드 UI (수정사항 2번) */
+        #guide-panel { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; background: rgba(255,255,255,0.1); padding: 15px 30px; border-radius: 50px; backdrop-filter: blur(5px); }
+        .guide-item { text-align: center; font-size: 0.9rem; color: #ccc; }
+        .guide-key { display: block; font-size: 1.4rem; font-weight: bold; color: #fff; }
+
+        /* 물리 입자 (수정사항 4번) */
+        .bead { position: absolute; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; color: white; pointer-events: none; white-space: nowrap; box-shadow: inset -5px -5px 15px rgba(0,0,0,0.5); }
+
+        /* 경고 효과 (수정사항 3번) */
+        @keyframes danger-pulse { 0% { background: rgba(255,0,0,0); } 50% { background: rgba(255,0,0,0.3); } 100% { background: rgba(255,0,0,0); } }
+        .warning-active { animation: danger-pulse 0.5s infinite; }
+        .wrong-flash { animation: shake 0.2s; background: rgba(255, 82, 82, 0.2) !important; }
+        @keyframes shake { 0%, 100% { transform: translate(-50%, -50%) translateX(0); } 25% { transform: translate(-50%, -50%) translateX(-10px); } 75% { transform: translate(-50%, -50%) translateX(10px); } }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="stat-bar">
+        <div class="stat-item">SCORE: <span id="score">0</span></div>
+        <div class="stat-item">COMBO: <span id="combo">0</span></div>
+        <div class="stat-item">TIME: <span id="timer">100</span>s</div>
+    </div>
+
+    <div id="display-area">
+        <div id="combo-text"></div>
+        <div id="dna-display">---</div>
+        <div id="input-display"></div>
+    </div>
+
+    <!-- 가이드 패널 -->
+    <div id="guide-panel">
+        <div class="guide-item">T → <span class="guide-key">← A</span></div>
+        <div class="guide-item">G → <span class="guide-key">↓ C</span></div>
+        <div class="guide-item">C → <span class="guide-key">↑ G</span></div>
+        <div class="guide-item">A → <span class="guide-key">→ U</span></div>
+    </div>
+
+    <!-- 초기 화면 -->
+    <div id="start-screen">
+        <h1>Codon Game</h1>
+        <p>DNA 염기에 대응하는 RNA를 입력하세요!</p>
+        <p style="color: #888;">(개시 코돈 TAC로 시작합니다)</p>
+        <button onclick="startGame()">PLAY GAME</button>
+    </div>
+
+    <!-- 결과 화면 -->
+    <div id="result-screen" style="display: none;">
+        <h2 id="end-msg">게임 종료!</h2>
+        <p style="font-size: 2rem;">최종 점수: <span id="final-score">0</span>점</p>
+        <div id="top10-area">
+            <p>TOP 10 달성!! 닉네임을 입력해주세요 :)</p>
+            <input type="text" id="nickname" placeholder="익명" style="padding: 10px; border-radius: 5px; border: none;">
+            <button onclick="saveScore()">기록 저장</button>
+        </div>
+        <div id="rank-display" style="margin-top: 20px; text-align: left; max-height: 200px; overflow-y: auto;"></div>
+        <button onclick="location.reload()" style="margin-top: 20px; background: #555;">다시 하기</button>
+    </div>
+</div>
+
+<script>
+const codonMap = {
+    "UUU":"Phe", "UUC":"Phe", "UUA":"Leu", "UUG":"Leu", "UCU":"Ser", "UCC":"Ser", "UCA":"Ser", "UCG":"Ser",
+    "UAU":"Tyr", "UAC":"Tyr", "UAA":"STOP", "UAG":"STOP", "UGU":"Cys", "UGC":"Cys", "UGA":"STOP", "UGG":"Trp",
+    "CUU":"Leu", "CUC":"Leu", "CUA":"Leu", "CUG":"Leu", "CCU":"Pro", "CCC":"Pro", "CCA":"Pro", "CCG":"Pro",
+    "CAU":"His", "CAC":"His", "CAA":"Gln", "CAG":"Gln", "CGU":"Arg", "CGC":"Arg", "CGA":"Arg", "CGG":"Arg",
+    "AUU":"Ile", "AUC":"Ile", "AUA":"Ile", "AUG":"Met", "ACU":"Thr", "ACC":"Thr", "ACA":"Thr", "ACG":"Thr",
+    "AAU":"Asn", "AAC":"Asn", "AAA":"Lys", "AAG":"Lys", "AGU":"Ser", "AGC":"Ser", "AGA":"Arg", "AGG":"Arg",
+    "GUU":"Val", "GUC":"Val", "GUA":"Val", "GUG":"Val", "GCU":"Ala", "GCC":"Ala", "GCA":"Ala", "GCG":"Ala",
+    "GAU":"Asp", "GAC":"Asp", "GAA":"Glu", "GAG":"Glu", "GGU":"Gly", "GGC":"Gly", "GGA":"Gly", "GGG":"Gly"
+};
+
+const pairing = { 'T':'A', 'A':'U', 'C':'G', 'G':'C' };
+const keyMap = { 'ArrowLeft': 'A', 'ArrowDown': 'C', 'ArrowUp': 'G', 'ArrowRight': 'U' };
+const colors = ["#FF5722", "#E91E63", "#9C27B0", "#3F51B5", "#00BCD4", "#4CAF50", "#FFC107"];
+
+let score = 0;
+let combo = 0;
+let timeLeft = 100;
+let currentDNA = "TAC";
+let currentInput = "";
+let gameActive = false;
+let beads = [];
+
+// 게임 시작
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    gameActive = true;
+    updateDisplay();
+    
+    const timerInterval = setInterval(() => {
+        if(!gameActive) { clearInterval(timerInterval); return; }
+        timeLeft--;
+        document.getElementById('timer').innerText = timeLeft;
+        if(timeLeft <= 0) endGame("시간이 모두 소모되었습니다!");
+    }, 1000);
+
+    requestAnimationFrame(updatePhysics);
+}
+
+// 입력 감지
+window.addEventListener('keydown', (e) => {
+    if(!gameActive) return;
+    const rnaChar = keyMap[e.code];
+    if(!rnaChar) return;
+
+    const targetRNA = pairing[currentDNA[currentInput.length]];
+
+    if(rnaChar === targetRNA) {
+        currentInput += rnaChar;
+        checkWarning(); // 경고 시스템 (수정사항 3)
+        
+        if(currentInput.length === 3) {
+            processCodon(currentInput);
+        }
+    } else {
+        // 틀렸을 때
+        timeLeft = Math.max(0, timeLeft - 1);
+        combo = 0;
+        document.getElementById('display-area').classList.add('wrong-flash');
+        setTimeout(() => document.getElementById('display-area').classList.remove('wrong-flash'), 200);
+    }
+    updateDisplay();
+});
+
+// 코돈 완성 처리
+function processCodon(codon) {
+    const amino = codonMap[codon];
+    
+    if(amino === "STOP") {
+        endGame("앗! 종료 코돈(Stop Codon)을 만들었습니다!");
+        return;
+    }
+
+    // 기본 점수 및 콤보 보너스 (수정사항 1)
+    combo++;
+    let points = 1;
+    if(combo > 0 && combo % 5 === 0) points += 1;
+    if(currentDNA[0] === currentDNA[1] && currentDNA[1] === currentDNA[2]) points += 10;
+    
+    score += points;
+    
+    // 아미노산 구슬 생성 (수정사항 4)
+    createBead(amino);
+    
+    // 다음 상태
+    currentInput = "";
+    generateNextDNA();
+    document.body.classList.remove('warning-active');
+}
+
+// 종료 코돈 경고 애니메이션 (수정사항 3)
+function checkWarning() {
+    // 현재까지 입력한 것 + 남은 DNA로 종료코돈 가능성 체크
+    let possibleRNA = currentInput;
+    for(let i = currentInput.length; i < 3; i++) {
+        possibleRNA += pairing[currentDNA[i]];
+    }
+    
+    if(codonMap[possibleRNA] === "STOP") {
+        document.body.classList.add('warning-active');
+    } else {
+        document.body.classList.remove('warning-active');
+    }
+}
+
+function generateNextDNA() {
+    const bases = ['A', 'G', 'C', 'T'];
+    currentDNA = "";
+    for(let i=0; i<3; i++) currentDNA += bases[Math.floor(Math.random() * 4)];
+}
+
+function updateDisplay() {
+    document.getElementById('dna-display').innerText = currentDNA;
+    document.getElementById('input-display').innerText = currentInput.padEnd(3, '_');
+    document.getElementById('score').innerText = score;
+    document.getElementById('combo').innerText = combo;
+    document.getElementById('combo-text').innerText = combo >= 5 ? `${combo} COMBO!` : "";
+}
+
+// 물리 구슬 로직 (Antigravity 느낌)
+function createBead(name) {
+    const el = document.createElement('div');
+    el.className = 'bead';
+    el.innerText = name;
+    el.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+    document.getElementById('game-container').appendChild(el);
+    
+    beads.push({
+        el: el,
+        x: Math.random() * (window.innerWidth - 60),
+        y: -100,
+        vx: (Math.random() - 0.5) * 4,
+        vy: 2,
+        r: 30
+    });
+}
+
+function updatePhysics() {
+    if(!gameActive && beads.length === 0) return;
+
+    beads.forEach((b, i) => {
+        b.vy += 0.15; // 중력
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // 바닥 충돌
+        if(b.y + b.r > window.innerHeight) {
+            b.y = window.innerHeight - b.r;
+            b.vy *= -0.4; // 튕김
+            b.vx *= 0.8;
+        }
+        // 벽 충돌
+        if(b.x < 0 || b.x + b.r*2 > window.innerWidth) b.vx *= -1;
+
+        b.el.style.transform = `translate(${b.x}px, ${b.y}px)`;
+    });
+
+    requestAnimationFrame(updatePhysics);
+}
+
+function endGame(msg) {
+    gameActive = false;
+    document.getElementById('end-msg').innerText = msg;
+    document.getElementById('result-screen').style.display = 'block';
+    document.getElementById('final-score').innerText = score;
+    document.body.classList.remove('warning-active');
+}
+
+function saveScore() {
+    const name = document.getElementById('nickname').value || "익명";
+    let ranks = JSON.parse(localStorage.getItem('codonRanks') || '[]');
+    ranks.push({name, score});
+    ranks.sort((a,b) => b.score - a.score);
+    ranks = ranks.slice(0, 10);
+    localStorage.setItem('codonRanks', JSON.stringify(ranks));
+    
+    const display = document.getElementById('rank-display');
+    display.innerHTML = "<h3>TOP 10 리스트</h3>" + ranks.map((r, i) => `<div>${i+1}. ${r.name} - ${r.score}점</div>`).join('');
+    document.getElementById('top10-area').style.display = 'none';
+}
+</script>
+</body>
+</html>
